@@ -8,6 +8,8 @@
 
   `#+reviewdate: [2024-06-12]'
 
+  This line embeds the date of your latest review of the note.
+
   The format of this line is according to `denote-file-type' (defaults
   to org).
 
@@ -192,7 +194,18 @@
   be.
 
 
-5 Source code. bugs and patches
+5 Installation
+══════════════
+
+  Install from GNU ELPA.
+
+  ┌────
+  │ M-x package-refresh-contents
+  │ M-x package-install
+  └────
+
+
+6 Source code. bugs and patches
 ═══════════════════════════════
 
   `denote-review' is developed at
@@ -201,7 +214,7 @@
   Please use the "Issues" option in the Codeberg repository.
 
 
-6 Limitations
+7 Limitations
 ═════════════
 
   The file extension of a note does not affect `denote-review'.
@@ -211,14 +224,14 @@
   for inserting and updating the review date.
 
 
-7 Contribute
+8 Contribute
 ════════════
 
   A copyright assignment to the FSF is required for all non-trivial code
   contributions.
 
 
-8 Distribution
+9 Distribution
 ══════════════
 
   `denote-review.el' and all other source files in this directory are
