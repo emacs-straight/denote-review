@@ -5,7 +5,7 @@
 ;; Author:  Matto Fransen <matto@matto.nl>
 ;; Maintainer:  Matto Fransen <matto@matto.nl>
 ;; Url: https://codeberg.org/mattof/denote-review
-;; Version: 1.0.1
+;; Version: 1.0.2
 ;; Keywords: files
 ;; Package-Requires: ((emacs "28.1") (denote "4.1.3"))
 
@@ -64,13 +64,11 @@
 (defun denote-review-search-regexp-for-filetype ()
   "Regexp to search for the reviewdate.
 Defaults to regexp for org filetype."
-  (cond ((eq denote-file-type 'markdown-yaml)
-         "\\(^reviewdate:[ \t]\\)\\([^\t\n]+\\)")
-        ((eq denote-file-type 'markdown-toml)
-         "\\(^reviewdate[ \t]\\)= \\([^\t\n]+\\)")
-        ((eq denote-file-type 'text)
-         "\\(^reviewdate:[ \t]\\)\\([^\t\n]+\\)")
-        (t "\\(^#\\+reviewdate:[ \t]\\[\\)\\([^\t\n]+\\)\\]")))
+       (pcase denote-file-type
+         ('markdown-yaml "\\(^reviewdate:[ \t]\\)\\([^\t\n]+\\)")
+         ('markdown-toml "\\(^reviewdate[ \t]\\)= \\([^\t\n]+\\)")
+         ('text          "\\(^reviewdate:[ \t]\\)\\([^\t\n]+\\)")
+         (_              "\\(^#\\+reviewdate:[ \t]\\[\\)\\([^\t\n]+\\)\\]")))
 
 (defun denote-review-insert-regexp-location-for-filetype ()
   "Regexp to search for the identifier string in frontmatter."
@@ -86,14 +84,13 @@ Defaults to regexp for org filetype."
 (defun denote-review-insert-reviewdate-line (date)
   "Insert the review date DATE frontmatter line.
 Format according to variable `denote-file-type'.
-Insert just after the identifier line."
-  (cond ((eq denote-file-type 'markdown-yaml)
-         (format "reviewdate: %s" date))
-        ((eq denote-file-type 'markdown-toml)
-         (format "reviewdate = %s" date))
-        ((eq denote-file-type 'text)
-         (format "reviewdate: %s" date))
-        (t (format "#+reviewdate: [%s]" date))))
+    Insert just after the identifier line."
+  (format (pcase denote-file-type
+            ('markdown-yaml "reviewdate: %s")
+            ('markdown-toml "reviewdate = %s")
+            ('text          "reviewdate: %s")
+            (_              "#+reviewdate: [%s]"))
+          date))
 
 (defun denote-review-insert-date (&optional thisdate insert-regexp)
   "Insert current date in ISO 8601 format as reviewdate.
@@ -144,7 +141,6 @@ Both regexp's set to match format based on variable `denote-file-type'"
   "Convert identifier in FILENAME into a date."
   (denote-id-to-date (substring filename 0 15)))
 
-;;;###autoload
 (defun denote-review-bulk-set-date (filename current-date-p)
   "Opens FILENAME and insert a reviewdate.
 When CURRENT-DATE-P is not null, use current date."
@@ -163,6 +159,7 @@ When CURRENT-DATE-P is not null, use current date."
                                         insert-regexp))
       (write-region nil nil filename))))
 
+;;;###autoload
 (defun denote-review-set-date-dired-marked-files ()
   "Insert a reviewdate in the marked files.
 Set a reviewdate according the identifier in the filename,
@@ -171,17 +168,20 @@ Does not overwrite existing reviewdates."
   (interactive)
   (unless (derived-mode-p 'dired-mode)
     (error (format "Command can only be used in a Dired buffer.")))
-  (dolist (file (dired-get-marked-files))
-    (when (denote-file-is-writable-and-supported-p file)
-      (denote-review-bulk-set-date file current-prefix-arg))))
+  (let ((count (length (dired-get-marked-files))))
+    (when (yes-or-no-p
+           (if (= count 1)
+               (format "Change 1 file? %s" (car (dired-get-marked-files)))
+             (format "Change %d files? " (length (dired-get-marked-files)))))
+      (dolist (file (dired-get-marked-files))
+        (when (denote-file-is-writable-and-supported-p file)
+          (denote-review-bulk-set-date file current-prefix-arg))))))
 
 ;; Collect keywords and prompt for a keyword to filter by.
 
 (defun denote-review-get-path ()
   "Prompt for a path when needed."
-  (let ((path '()))
-    (when (boundp 'denote-directory)
-      (setq path denote-directory))
+  (let ((path denote-directory))
     (when (boundp 'denote-silo-directories)
       (setq path (append path denote-silo-directories)))
     (if (listp path)
@@ -191,18 +191,13 @@ Does not overwrite existing reviewdates."
 
 (defun denote-review-get-keyword-list (denotepath)
   "Fetch keywords from the filenames in directory DENOTEPATH."
-  (let ((keyword-list '())
-        (denote-directory denotepath))
-    (mapc
-     (lambda (myfile)
-       (dolist (mykeyword
-                (denote-extract-keywords-from-path myfile))
-         (add-to-list 'keyword-list mykeyword)))
-     (denote-directory-files nil t nil))
-    (sort keyword-list)))
+  (let ((denote-directory denotepath))
+    (sort (delete-dups
+           (mapcan #'denote-extract-keywords-from-path
+	           (denote-directory-files nil t nil))))))
 
 (defun denote-review-select-keyword ()
-  "Select a keyword or `All' using completion."
+  "Select a keyword or '' using completion."
   (let ((denotepath (denote-review-get-path)))
     (cons denotepath
           (completing-read
@@ -215,10 +210,10 @@ Does not overwrite existing reviewdates."
   "Get the reviewdate of FILENAME.
 SEARCH-REGEXP is regexp to search for reviewdate.
 It is set to match format based on variable `denote-file-type'"
- (with-temp-buffer
-   (insert-file-contents filename)
-   (denote-review-get-date
-    search-regexp)))
+  (with-temp-buffer
+    (insert-file-contents filename)
+    (denote-review-get-date
+     search-regexp)))
 
 (defun denote-review-collect-files (denotepath-and-keyword)
   "Fetch reviewdate from the files in DENOTEPATH-AND-KEYWORD.
@@ -227,28 +222,20 @@ DENOTEPATH-AND-KEYWORD is a cons of a path and a keyword.
 Create a list in the format required by `tabulated-list-mode'."
   (let ((search-regexp (denote-review-search-regexp-for-filetype))
         (denote-directory (car denotepath-and-keyword)))
-    (or (mapcan (lambda (myfile)
+    (or (mapcan (lambda (filename)
 		  (and (or (string= (cdr denotepath-and-keyword) "")
 			   (string-match
-			    (format "_%s" (cdr denotepath-and-keyword)) myfile))
+                            (rx "_" (literal (cdr denotepath-and-keyword)))
+                            filename))
 		       (and-let* ((reviewdate (denote-review-check-date-of-file
-					       myfile
+					       filename
 					       search-regexp)))
-			 `((,myfile
+			 `((,filename
 			    [,reviewdate
-			     ,(file-name-nondirectory myfile)])))))
+			     ,(file-name-nondirectory filename)])))))
 		(denote-directory-files nil t nil))
 	(error (format "No files with a reviewdate found (filter: keyword %s)"
 		       (cdr denotepath-and-keyword))))))
-
-(defun denote-review-collect-files--revert (denotepath-and-keyword)
-  "Re-populated `tabulated-list-entries'.
-DENOTEPATH-AND-KEYWORD is a cons of a path and a keyword."
-  (setq tabulated-list-entries
-        (denote-review-collect-files denotepath-and-keyword))
-  (setq tabulated-list-sort-key (cons "Reviewdate" nil))
-  (tabulated-list-init-header)
-  (tabulated-list-print t))
 
 ;; Mode map for tabulated list and actions.
 
@@ -305,12 +292,8 @@ Filter by keyword."
   (interactive (list (denote-review-select-keyword)))
   (with-current-buffer (get-buffer-create "*denote-review-results*")
     (denote-review-mode)
-    (setq tabulated-list-entries (denote-review-collect-files
-                                  denotepath-and-keyword))
-    (add-hook 'tabulated-list-revert-hook
-              (lambda ()
-                (denote-review-collect-files--revert denotepath-and-keyword))
-	      nil t)
+    (setq tabulated-list-entries (lambda () (denote-review-collect-files
+                                             denotepath-and-keyword)))
     (tabulated-list-print t)
     (display-buffer (current-buffer))
     (setq mode-line-buffer-identification
